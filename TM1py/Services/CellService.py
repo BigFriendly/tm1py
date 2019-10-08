@@ -385,6 +385,10 @@ class CellService:
         cellset_id = self.create_cellset(mdx)
         return self.extract_cellset_dataframe(cellset_id, **kwargs)
 
+    def execute_mdx_grid(self, mdx, **kwargs):
+        cellset_id = self.create_cellset(mdx)
+        return self.extract_cellset_grid(cellset_id, **kwargs)
+
     def execute_view_dataframe_pivot(self, cube_name, view_name, private=False, dropna=False, fill_value=None):
         """ Execute a cube view to get a pandas pivot dataframe, in the shape of the cube view
 
@@ -811,6 +815,42 @@ class CellService:
         if 'dtype' not in kwargs:
             kwargs['dtype'] = {'Value': None, **{col: str for col in range(999)}}
         return pd.read_csv(memory_file, sep=',', **kwargs)
+
+    @tidy_cellset
+    def extract_cellset_grid(self, cellset_id, **kwargs):
+        request = "/api/v1/Cellsets('{}')?$expand=" \
+                  "Axes($filter=Ordinal eq 0 or Ordinal eq 1;$expand=Tuples(" \
+                  "$expand=Members($select=Name)),Hierarchies($select=Name))," \
+                  "Cells($select=Value)".format(cellset_id)
+        response = self._rest.GET(request=request, data='')
+        response_json = response.json()
+        rows = response_json["Axes"][1]["Tuples"]
+        column_headers = [tupl["Members"][0]["Name"] for tupl in response_json["Axes"][0]["Tuples"]]
+        row_headers = [hierarchy["Name"] for hierarchy in response_json["Axes"][1]["Hierarchies"]]
+        cell_values = [cell["Value"] for cell in response_json["Cells"]]
+
+        headers = row_headers + column_headers
+        body = []
+
+        number_rows = len(rows)
+        # avoid division by zero
+        if not number_rows:
+            return pd.DataFrame(body, columns=headers)
+        number_cells = len(cell_values)
+        number_columns = int(number_cells / number_rows)
+
+        cell_values_by_row = [cell_values[cell_counter:cell_counter + number_columns]
+                              for cell_counter
+                              in range(0, number_cells, number_columns)]
+        element_names_by_row = [tuple(member["Name"]
+                                      for member
+                                      in tupl["Members"])
+                                for tupl
+                                in rows]
+
+        for element_tuple, cells in zip(element_names_by_row, cell_values_by_row):
+            body.append(list(element_tuple) + cells)
+        return pd.DataFrame(body, columns=headers)
 
     def extract_cellset_dataframe_pivot(self, cellset_id, dropna=False, fill_value=False, **kwargs):
         """ Extract a pivot table (pandas dataframe) from a cellset in TM1

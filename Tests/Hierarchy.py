@@ -113,17 +113,17 @@ class TestHierarchyMethods(unittest.TestCase):
         element = h["Total Years"]
         self.assertIsInstance(element, Element)
         self.assertEqual(element.name, "Total Years")
-        self.assertEqual(element.element_type, "Consolidated")
+        self.assertEqual(element.element_type, Element.Types.CONSOLIDATED)
         element = h["Total Years".replace(" ", "").lower()]
         self.assertIsInstance(element, Element)
         self.assertEqual(element.name, "Total Years")
-        self.assertEqual(element.element_type, "Consolidated")
+        self.assertEqual(element.element_type, Element.Types.CONSOLIDATED)
 
         element = h["1989"]
         self.assertIsInstance(element, Element)
         self.assertEqual(element.name, "1989")
-        self.assertEqual(element.element_type, "Numeric")
-        self.assertNotEqual(element.element_type, "String")
+        self.assertEqual(element.element_type, Element.Types.NUMERIC)
+        self.assertNotEqual(element.element_type, Element.Types.STRING)
 
     def test_hierarchy___get__exception(self):
         h = self.tm1.dimensions.hierarchies.get(DIMENSION_NAME, DIMENSION_NAME)
@@ -171,7 +171,7 @@ class TestHierarchyMethods(unittest.TestCase):
         self.assertIn('Name Long', [ea.name for ea in h.element_attributes])
 
         self.assertEqual(h.edges[('Total Years', '2011')], 2)
-        self.assertEqual(h.elements['No Year'].element_type, 'String')
+        self.assertEqual(h.elements['No Year'].element_type, Element.Types.STRING)
 
         summary = self.tm1.dimensions.hierarchies.get_hierarchy_summary(DIMENSION_NAME, DIMENSION_NAME)
         self.assertEqual(summary["Elements"], 147)
