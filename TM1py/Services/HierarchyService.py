@@ -190,3 +190,14 @@ class HierarchyService(ObjectService):
             "Edges": []
         }
         return self._rest.PATCH(request=request, data=json.dumps(body))
+
+    def is_balanced(self, dimension_name, hierarchy_name):
+        request = f"/api/v1/Dimensions('{dimension_name}')/Hierarchies('{hierarchy_name}')/Structure/$value"
+        structure = int(self._rest.GET(request).text)
+        # 0 = balanced, 2 = unbalanced
+        if structure == 0:
+            return True
+        elif structure == 2:
+            return False
+        else:
+            raise RuntimeError(f"Unexpected return value from TM1 API request: {str(structure)}")

@@ -59,6 +59,21 @@ class TestElementMethods(unittest.TestCase):
         cls.tm1.cubes.cells.write_value('1990/91', '}ElementAttributes_' + DIMENSION_NAME, ('1991', 'Financial Year'))
         cls.tm1.cubes.cells.write_value('1991/92', '}ElementAttributes_' + DIMENSION_NAME, ('1992', 'Financial Year'))
 
+    def add_unbalanced_hierarchy(self, hierarchy_name):
+        dimension = self.tm1.dimensions.get(DIMENSION_NAME)
+        # other hierarchy
+        hierarchy = Hierarchy(name=hierarchy_name, dimension_name=DIMENSION_NAME)
+
+        hierarchy.add_element("Total Years Unbalanced", "Consolidated")
+        hierarchy.add_element('1989', 'Numeric')
+        hierarchy.add_element('1990', 'Numeric')
+        hierarchy.add_element('1991', 'Numeric')
+        hierarchy.add_edge("Total Years Unbalanced", "1989", 1)
+        hierarchy.add_edge("Total Years Unbalanced", "1990", 1)
+        dimension.add_hierarchy(hierarchy)
+
+        self.tm1.dimensions.update(dimension)
+
     @classmethod
     def tearDown(cls):
         cls.tm1.dimensions.delete(DIMENSION_NAME)
@@ -270,6 +285,269 @@ class TestElementMethods(unittest.TestCase):
             DIMENSION_NAME, HIERARCHY_NAME)
 
         self.assertEqual(number_of_elements, 2)
+
+    def test_get_member_properties_grid_default(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=None,
+            skip_consolidations=True,
+            attributes=None)
+
+        self.assertEqual(len(members), 5)
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Next Year", "Financial Year", "level001", "level000"))
+
+        # 1989
+        year_1989 = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(year_1989.values[0]),
+            ("1989", "Numeric", "1988", "", "1988/89", "Total Years", "All Consolidations"))
+
+        # 1992
+        year_1992 = members.loc[members[DIMENSION_NAME] == "1992"]
+        self.assertEqual(
+            tuple(year_1992.values[0]),
+            ("1992", "Numeric", "1991", "", "1991/92", "Total Years", "All Consolidations"))
+
+    def test_get_member_properties_grid_attributes(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=None,
+            skip_consolidations=True,
+            attributes=["Previous Year"])
+
+        self.assertEqual(len(members), 5)
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "level001", "level000"))
+
+        # 1989
+        year_1989 = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(year_1989.values[0]),
+            ("1989", "Numeric", "1988", "Total Years", "All Consolidations"))
+
+        # 1992
+        year_1992 = members.loc[members[DIMENSION_NAME] == "1992"]
+        self.assertEqual(
+            tuple(year_1992.values[0]),
+            ("1992", "Numeric", "1991", "Total Years", "All Consolidations"))
+
+    def test_get_member_properties_grid_no_attributes(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=None,
+            skip_consolidations=True,
+            attributes=[])
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "level001", "level000"))
+
+        self.assertEqual(len(members), 5)
+
+        # 1989
+        year_1989 = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(year_1989.values[0]),
+            ("1989", "Numeric", "Total Years", "All Consolidations"))
+
+        # 1992
+        year_1992 = members.loc[members[DIMENSION_NAME] == "1992"]
+        self.assertEqual(
+            tuple(year_1992.values[0]),
+            ("1992", "Numeric", "Total Years", "All Consolidations"))
+
+    def test_get_member_properties_grid_member_selection(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=f"{{ [{DIMENSION_NAME}].[1989], [{DIMENSION_NAME}].[1992] }}",
+            skip_consolidations=True,
+            attributes=None)
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Next Year", "Financial Year", "level001", "level000"))
+
+        self.assertEqual(len(members), 2)
+
+        # 1989
+        year_1989 = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(year_1989.values[0]),
+            ("1989", "Numeric", "1988", "", "1988/89", "Total Years", "All Consolidations"))
+
+        # 1992
+        year_1992 = members.loc[members[DIMENSION_NAME] == "1992"]
+        self.assertEqual(
+            tuple(year_1992.values[0]),
+            ("1992", "Numeric", "1991", "", "1991/92", "Total Years", "All Consolidations"))
+
+    def test_get_member_properties_grid_skip_parents(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=f"{{ [{DIMENSION_NAME}].[1989], [{DIMENSION_NAME}].[1992] }}",
+            skip_consolidations=True,
+            attributes=None,
+            skip_parents=True)
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Next Year", "Financial Year"))
+
+        self.assertEqual(len(members), 2)
+
+        # 1989
+        year_1989 = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(year_1989.values[0]),
+            ("1989", "Numeric", "1988", "", "1988/89"))
+
+        # 1992
+        year_1992 = members.loc[members[DIMENSION_NAME] == "1992"]
+        self.assertEqual(
+            tuple(year_1992.values[0]),
+            ("1992", "Numeric", "1991", "", "1991/92"))
+
+    # alternate hierarchies cause issues. must be addressed.
+    @unittest.skip
+    def test_get_member_properties_grid_unbalanced(self):
+        hierarchy_name = "Unbalanced Hierarchy"
+        self.add_unbalanced_hierarchy(hierarchy_name=hierarchy_name)
+
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=hierarchy_name,
+            member_selection=None,
+            skip_consolidations=False,
+            attributes=None)
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Next Year", "Financial Year", "level001", "level000"))
+
+    def test_get_member_properties_grid_include_consolidations(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=None,
+            skip_consolidations=False,
+            attributes=None)
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Next Year", "Financial Year", "level001", "level000"))
+        self.assertEqual(
+            tuple(members[DIMENSION_NAME]),
+            ("All Consolidations", "Total Years", "No Year", "1989", "1990", "1991", "1992"))
+
+        row = members.loc[members[DIMENSION_NAME] == "All Consolidations"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("All Consolidations", "Consolidated", "", "", "", "", ""))
+        row = members.loc[members[DIMENSION_NAME] == "Total Years"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("Total Years", "Consolidated", "", "", "", "All Consolidations", ""))
+        row = members.loc[members[DIMENSION_NAME] == "No Year"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("No Year", "Numeric", "", "", "", "Total Years", "All Consolidations"))
+        row = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1989", "Numeric", "1988", "", "1988/89", "Total Years", "All Consolidations"))
+        row = members.loc[members[DIMENSION_NAME] == "1992"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1992", "Numeric", "1991", "", "1991/92", "Total Years", "All Consolidations"))
+
+    def test_get_member_properties_grid_member_selection_and_attributes(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=f"{{ [{DIMENSION_NAME}].[1989], [{DIMENSION_NAME}].[1990] }}",
+            skip_consolidations=True,
+            attributes=["Previous Year", "Financial Year"])
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Financial Year", "level001", "level000"))
+
+        self.assertEqual(
+            tuple(members[DIMENSION_NAME]),
+            ("1989", "1990"))
+
+        row = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1989", "Numeric", "1988", "1988/89", "Total Years", "All Consolidations"))
+
+        row = members.loc[members[DIMENSION_NAME] == "1990"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1990", "Numeric", "1989", "1989/90", "Total Years", "All Consolidations"))
+
+    def test_get_member_properties_grid_member_iterable_selection_and_attributes(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=["1989", "1990"],
+            skip_consolidations=True,
+            attributes=["Previous Year", "Financial Year"])
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Financial Year", "level001", "level000"))
+
+        self.assertEqual(
+            tuple(members[DIMENSION_NAME]),
+            ("1989", "1990"))
+
+        row = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1989", "Numeric", "1988", "1988/89", "Total Years", "All Consolidations"))
+
+        row = members.loc[members[DIMENSION_NAME] == "1990"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1990", "Numeric", "1989", "1989/90", "Total Years", "All Consolidations"))
+
+    def test_get_member_properties_grid_member_iterable_selection_and_custom_parent_names(self):
+        members = self.tm1.dimensions.hierarchies.elements.get_member_properties_grid(
+            dimension_name=DIMENSION_NAME,
+            hierarchy_name=DIMENSION_NAME,
+            member_selection=["1989", "1990"],
+            skip_consolidations=True,
+            attributes=["Previous Year", "Financial Year"],
+            level_names=["leaves", "parent1", "parent2"])
+
+        self.assertEqual(
+            tuple(members.columns),
+            (DIMENSION_NAME, "Type", "Previous Year", "Financial Year", "parent1", "parent2"))
+
+        self.assertEqual(
+            tuple(members[DIMENSION_NAME]),
+            ("1989", "1990"))
+
+        row = members.loc[members[DIMENSION_NAME] == "1989"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1989", "Numeric", "1988", "1988/89", "Total Years", "All Consolidations"))
+
+        row = members.loc[members[DIMENSION_NAME] == "1990"]
+        self.assertEqual(
+            tuple(row.values[0]),
+            ("1990", "Numeric", "1989", "1989/90", "Total Years", "All Consolidations"))
 
 
 if __name__ == '__main__':

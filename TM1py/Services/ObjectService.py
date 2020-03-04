@@ -8,6 +8,8 @@ class ObjectService:
     
     """
 
+    SANDBOX_DIMENSION = "Sandboxes"
+
     BINARY_HTTP_HEADER = {'Content-Type': 'application/octet-stream; odata.streaming=true'}
 
     def __init__(self, rest_service):

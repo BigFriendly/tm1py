@@ -19,8 +19,8 @@ class Cube(TM1Object):
         :param rules: instance of TM1py.Objects.Rules
         """
         self._name = name
-        self._dimensions = dimensions
-        self._rules = rules
+        self.dimensions = dimensions
+        self.rules = rules
 
     @property
     def name(self):
@@ -32,7 +32,10 @@ class Cube(TM1Object):
 
     @dimensions.setter
     def dimensions(self, value):
-        self._dimensions = value
+        if value[0] == self.SANDBOX_DIMENSION:
+            self._dimensions = value[1:]
+        else:
+            self._dimensions = value
 
     @property
     def has_rules(self):

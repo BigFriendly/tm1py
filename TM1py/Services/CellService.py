@@ -8,6 +8,7 @@ from io import StringIO
 
 import pandas as pd
 
+from TM1py.Services import ObjectService
 from TM1py.Utils import Utils, CaseAndSpaceInsensitiveSet
 from TM1py.Utils.Utils import build_pandas_dataframe_from_cellset, dimension_name_from_element_unique_name, \
     CaseAndSpaceInsensitiveTuplesDict, case_and_space_insensitive_equals, odata_escape_single_quotes_in_object_names
@@ -28,12 +29,10 @@ def tidy_cellset(func):
     return wrapper
 
 
-class CellService:
+class CellService(ObjectService):
     """ Service to handle Read and Write operations to TM1 cubes
     
     """
-
-    SANDBOX_DIMENSION = "Sandboxes"
 
     def __init__(self, tm1_rest):
         """
@@ -387,6 +386,10 @@ class CellService:
 
     def execute_mdx_grid(self, mdx, **kwargs):
         cellset_id = self.create_cellset(mdx)
+        return self.extract_cellset_grid(cellset_id, **kwargs)
+
+    def execute_view_grid(self, cube_name, view_name, private, **kwargs):
+        cellset_id = self.create_cellset_from_view(cube_name, view_name, private)
         return self.extract_cellset_grid(cellset_id, **kwargs)
 
     def execute_view_dataframe_pivot(self, cube_name, view_name, private=False, dropna=False, fill_value=None):
@@ -850,7 +853,7 @@ class CellService:
 
         for element_tuple, cells in zip(element_names_by_row, cell_values_by_row):
             body.append(list(element_tuple) + cells)
-        return pd.DataFrame(body, columns=headers)
+        return pd.DataFrame(body, columns=headers, dtype=str)
 
     def extract_cellset_dataframe_pivot(self, cellset_id, dropna=False, fill_value=False, **kwargs):
         """ Extract a pivot table (pandas dataframe) from a cellset in TM1

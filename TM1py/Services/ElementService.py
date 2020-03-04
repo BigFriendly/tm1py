@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+from collections import Iterable
 
 import pandas as pd
 
@@ -159,13 +160,16 @@ class ElementService(ObjectService):
             dim=dimension_name)
         return self._retrieve_mdx_rows_and_cell_values_as_string_set(mdx)
 
-    def get_levels_names(self, dimension_name, hierarchy_name):
+    def get_level_names(self, dimension_name, hierarchy_name, descending=True):
         request = "/api/v1/Dimensions('{}')/Hierarchies('{}')/Levels?$select=Name".format(
             dimension_name, hierarchy_name)
         response = self._rest.GET(request)
-        return [level["Name"] for level in response.json()["value"]]
+        if descending:
+            return [level["Name"] for level in reversed(response.json()["value"])]
+        else:
+            return [level["Name"] for level in response.json()["value"]]
 
-    def get_levels_number(self, dimension_name, hierarchy_name):
+    def get_levels_count(self, dimension_name, hierarchy_name):
         request = "/api/v1/Dimensions('{}')/Hierarchies('{}')/Levels/$count".format(dimension_name, hierarchy_name)
         response = self._rest.GET(request)
         return int(response.text)
@@ -174,63 +178,104 @@ class ElementService(ObjectService):
         request = "/api/v1/Dimensions('{}')/Hierarchies('{}')/Elements?$select=Name,Type{}".format(
             dimension_name, hierarchy_name, "&$filter=Type ne 3" if skip_consolidations else "")
         response = self._rest.GET(request)
-        return CaseAndSpaceInsensitiveDict(
-            {(element['Name'], element['Type']) for element in response.json()["value"]})
+
+        result = CaseAndSpaceInsensitiveDict()
+        for element in response.json()["value"]:
+            result[element['Name']] = element["Type"]
+        return result
 
     def attribute_cube_exists(self, dimension_name):
         return self._exists("/api/v1/Cubes('" + self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name + "')")
 
-    def get_member_properties_grid(self, dimension_name, hierarchy_name, skip_consolidations=True):
+    def get_member_properties_grid(self, dimension_name, hierarchy_name, member_selection=None,
+                                   skip_consolidations=True, attributes=None, skip_parents=False,
+                                   level_names=None):
         """
 
-        :param dimension_name:
-        :param hierarchy_name:
-        :param skip_consolidations:
-        :return:
+        :param dimension_name: Name of the dimension
+        :param hierarchy_name: Name of the hierarchy in the dimension
+        :param member_selection: Selection of members. Iterable or valid MDX string
+        :param skip_consolidations: Boolean flag to skip consolidations
+        :param attributes: Selection of attributes. Iterable. If None retrieve all.
+        :param level_names: List of labels for parent columns. If None use level names from TM1.
+        :param skip_parents: Boolean Flag to skip parent columns.
+        :return: pandas DataFrame
         """
-        attribute_cube_exists_for_dimension = self.attribute_cube_exists(dimension_name)
-        assert attribute_cube_exists_for_dimension
+        if not member_selection:
+            member_selection = f"{{ [{dimension_name}].[{hierarchy_name}].Members }}"
+            if skip_consolidations:
+                member_selection = f"{{ Tm1FilterByLevel({member_selection}, 0) }}"
+
+        if not isinstance(member_selection, str):
+            if isinstance(member_selection, Iterable):
+                member_selection = "{" + ",".join(f"[{dimension_name}].[{member}]" for member in member_selection) + "}"
+            else:
+                raise ValueError("Argument 'element_selection' must be None or str")
+
+        if not self.attribute_cube_exists(dimension_name):
+            raise RuntimeError(self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name + " cube must exist")
+
+        members = [tupl[0] for tupl in self.execute_set_mdx(
+            mdx=member_selection,
+            element_properties=None,
+            member_properties=("Name", "UniqueName"),
+            parent_properties=None)]
 
         element_types = self.get_element_types(
             dimension_name=dimension_name,
             hierarchy_name=hierarchy_name,
             skip_consolidations=skip_consolidations)
+
         df = pd.DataFrame(
-            data=element_types.items(),
+            data=[(member["Name"], element_types[member["Name"]]) for member in members],
             dtype=str,
             columns=[dimension_name, 'Type'])
 
         calculated_members_definition = list()
         calculated_members_selection = list()
+        if not skip_parents:
+            levels = self.get_levels_count(dimension_name, hierarchy_name)
 
-        levels = self.get_levels_number(dimension_name=dimension_name, hierarchy_name=hierarchy_name)
-        for parent in range(1, levels, 1):
-            calculated_members_definition.append(
-                "MEMBER [{}].[parent{}] AS [{}].CurrentMember.{}Name".format(
-                    self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name, str(parent), dimension_name, "Parent." * parent))
+            # potential custom parent names
+            if not level_names:
+                level_names = self.get_level_names(dimension_name, hierarchy_name)
 
-            calculated_members_selection.append("[{}].[parent{}]".format(
-                self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name, str(parent)))
+            for parent in range(1, levels, 1):
+                calculated_members_definition.append(
+                    f"""
+                    MEMBER [{self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name}].[{level_names[parent]}] 
+                    AS [{dimension_name}].CurrentMember.{'Parent.' * parent}Name
+                    """)
 
-        column_selection = "Tm1SubsetAll([" + self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name + "]), " + ",".join(
-            calculated_members_selection)
-        element_selection = ",".join(
-            "[{}].[{}].[{}]".format(dimension_name, hierarchy_name, element_name)
-            for element_name
-            in element_types.keys())
+                calculated_members_selection.append(
+                    f"[{self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name}].[{level_names[parent]}]")
 
-        mdx = """
-        WITH
-        {calculated_members}
+        if attributes is None:
+            column_selection = "{Tm1SubsetAll([" + self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name + "])}"
+        else:
+            column_selection = "{" + ",".join(
+                "[" + self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name + "].[" + attribute + "]"
+                for attribute
+                in attributes) + "}"
+
+        if calculated_members_selection:
+            column_selection = column_selection + " + {" + ",".join(calculated_members_selection) + "}"
+        member_selection = ",".join(
+            member["UniqueName"]
+            for member
+            in members)
+
+        mdx_with_block = ""
+        if calculated_members_definition:
+            mdx_with_block = "WITH " + " ".join(calculated_members_definition)
+
+        mdx = f"""
+        {mdx_with_block}
         SELECT
-        {{ {element_selection} }} ON ROWS,
+        {{ {member_selection} }} ON ROWS,
         {{ {column_selection} }} ON COLUMNS
-        FROM [{cube}]  
-        """.format(
-            calculated_members=" ".join(calculated_members_definition),
-            element_selection=element_selection,
-            cube=self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name,
-            column_selection=column_selection)
+        FROM [{self.ELEMENT_ATTRIBUTES_PREFIX + dimension_name}]  
+        """
 
         from TM1py import CellService
         df_data = CellService(self._rest).execute_mdx_grid(mdx, element_unique_names=False)

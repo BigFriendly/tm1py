@@ -415,6 +415,9 @@ class TestDataMethods(unittest.TestCase):
         # Check if total value is the same AND coordinates are the same. Handle None
         self.assertEqual(self.total_value, sum([v["Value"] for v in data.values() if v["Value"]]))
         for coordinates in data.keys():
+            # manage potential sandbox dimension
+            if coordinates[0] == "[Sandboxes].[Sandboxes].[Base]":
+                coordinates = coordinates[1:]
             self.assertEqual(len(coordinates), 3)
             self.assertIn("[TM1py_Tests_Cell_Dimension1].", coordinates[0])
             self.assertIn("[TM1py_Tests_Cell_Dimension2].", coordinates[1])
@@ -439,6 +442,9 @@ class TestDataMethods(unittest.TestCase):
         # Check if total value is the same AND coordinates are the same. Handle None
         self.assertEqual(self.total_value, sum([v["Value"] for v in data.values() if v["Value"]]))
         for coordinates in data.keys():
+            # manage potential sandbox dimension
+            if coordinates[0] == "[Sandboxes].[Sandboxes].[Base]":
+                coordinates = coordinates[1:]
             self.assertEqual(len(coordinates), 3)
             self.assertIn("[TM1py_Tests_Cell_Dimension1].", coordinates[0])
             self.assertIn("[TM1py_Tests_Cell_Dimension2].", coordinates[1])
@@ -617,6 +623,11 @@ class TestDataMethods(unittest.TestCase):
         for axis in axes:
             for member_tuple in axis["Tuples"]:
                 for member in member_tuple["Members"]:
+
+                    # manage potential sandbox dimension
+                    if member["Element"]["UniqueName"] == "[Sandboxes].[Sandboxes].[Base]":
+                        continue
+
                     self.assertIn("Name", member)
                     self.assertIn("Ordinal", member)
                     self.assertIn("Weight", member)
@@ -1471,6 +1482,12 @@ class TestDataMethods(unittest.TestCase):
         self.assertEqual(next(values), 1.5)
 
         self.tm1.cubes.cells.write_values_through_cellset(mdx, (original_value,))
+
+    def test_execute_mdx_grid(self):
+        pass
+
+    def test_execute_view_grid(self):
+        pass
 
     def test_deactivate_transaction_log(self):
         self.tm1.cubes.cells.write_value(value="YES",
