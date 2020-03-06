@@ -10,7 +10,9 @@ from requests.adapters import HTTPAdapter
 # SSO not supported for Linux
 try:
     from requests_negotiate_sspi import HttpNegotiateAuth
+    sso_supported=True
 except ImportError:
+    sso_supported=False
     warnings.warn("requests_negotiate_sspi failed to import. SSO will not work", ImportWarning)
 
 from TM1py.Exceptions import TM1pyException
@@ -339,7 +341,7 @@ class RESTService:
 
     @staticmethod
     def _build_authorization_token_cam(user=None, password=None, namespace=None, gateway=None, verify=False):
-        if gateway:
+        if gateway and sso_supported:
             try:
                 HttpNegotiateAuth
             except NameError:
